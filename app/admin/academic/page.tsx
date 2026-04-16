@@ -62,6 +62,7 @@ export default function AcademicPage() {
     const [newFaculty, setNewFaculty] = useState({ name: '', university_id: '' })
     const [newProgramme, setNewProgramme] = useState({ name: '', faculty_id: '', duration_years: 4 })
     const [newCourse, setNewCourse] = useState({ title: '', code: '', programme_id: '', level: 100, semester: 1 })
+    const [isAdmin, setIsAdmin] = useState(false)
     
     // Bulk Form State
     const [isBulkEntry, setIsBulkEntry] = useState(false)
@@ -73,6 +74,15 @@ export default function AcademicPage() {
     const searchParams = useSearchParams()
     
     useEffect(() => {
+        const checkRole = async () => {
+            const { data: { user } } = await supabase.auth.getUser()
+            if (user) {
+                const { data } = await supabase.from('profiles').select('isAdmin, role, is_rep').eq('id', user.id).single()
+                setIsAdmin(data?.isAdmin || data?.role === 'admin')
+            }
+        }
+        checkRole()
+        
         const queryUni = searchParams.get('university')
         if (queryUni) {
             setSearchTerm(queryUni)
@@ -118,6 +128,11 @@ export default function AcademicPage() {
         let payload = {}
 
         if (modalType === 'university') {
+            if (!isAdmin) {
+                alert('Restricted: Only administrators can initialize Institutional Nodes.')
+                setSaving(false)
+                return
+            }
             table = 'universities'
             payload = newUni
         } else if (modalType === 'faculty') {
@@ -212,6 +227,10 @@ export default function AcademicPage() {
     }
 
     async function handleDelete(id: string, table: string) {
+        if (table === 'universities' && !isAdmin) {
+            alert('Restricted: Deletion of Institutional Nodes is restricted to root administrators.')
+            return
+        }
         if (!confirm('Are you sure you want to delete this item? This action cannot be undone.')) return
         
         const result = await deleteAcademicItem(table, id)
@@ -231,6 +250,11 @@ export default function AcademicPage() {
         let payload = {}
 
         if (modalType === 'university') {
+            if (!isAdmin) {
+                alert('Restricted: Reconfiguration of Institutional Nodes is restricted to root administrators.')
+                setSaving(false)
+                return
+            }
             table = 'universities'
             payload = { name: editingItem.name, category: editingItem.category }
         } else if (modalType === 'faculty') {
@@ -297,17 +321,19 @@ export default function AcademicPage() {
                     <p className="text-white/30 font-black text-[10px] uppercase tracking-[0.3em]">Configure the Global Academic Hierarchy of the UniPast Web</p>
                 </div>
                 
-                <button
-                    onClick={() => {
-                        setModalType(activeTab)
-                        setShowModal(true)
-                    }}
-                    className="relative px-10 py-5 rounded-[1.5rem] bg-primary text-card font-black text-xs uppercase tracking-[0.3em] overflow-hidden group/btn shadow-[0_0_30px_rgba(0,255,204,0.2)] hover:shadow-primary/40 transition-all duration-500 flex items-center gap-3"
-                >
-                    <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 skew-x-12" />
-                    <Plus size={20} className="relative z-10" />
-                    <span className="relative z-10">Deploy New {activeTab}</span>
-                </button>
+                {(activeTab !== 'university' || isAdmin) && (
+                    <button
+                        onClick={() => {
+                            setModalType(activeTab)
+                            setShowModal(true)
+                        }}
+                        className="relative px-10 py-5 rounded-[1.5rem] bg-primary text-card font-black text-xs uppercase tracking-[0.3em] overflow-hidden group/btn shadow-[0_0_30px_rgba(0,255,204,0.2)] hover:shadow-primary/40 transition-all duration-500 flex items-center gap-3"
+                    >
+                        <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-700 skew-x-12" />
+                        <Plus size={20} className="relative z-10" />
+                        <span className="relative z-10">Deploy New {activeTab}</span>
+                    </button>
+                )}
             </div>
 
             <div className="flex flex-wrap gap-4 p-1.5 bg-card/20 backdrop-blur-3xl rounded-[2rem] border border-white/5 w-fit">
@@ -411,22 +437,26 @@ export default function AcademicPage() {
                                         </td>
                                         <td className="px-10 py-8 text-right">
                                             <div className="flex items-center justify-end gap-4 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-x-4 group-hover:translate-x-0">
-                                                <button 
-                                                    onClick={() => {
-                                                        setEditingItem(item)
-                                                        setModalType(activeTab)
-                                                        setShowModal(true)
-                                                    }}
-                                                    className="h-12 w-12 bg-white/5 text-white/30 hover:text-primary hover:bg-primary/10 border border-white/5 hover:border-primary/40 rounded-2xl transition-all flex items-center justify-center group/opt"
-                                                >
-                                                    <Pencil size={20} className="group-hover/opt:scale-110 transition-transform" />
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleDelete(item.id, activeTab === 'university' ? 'universities' : activeTab === 'faculty' ? 'faculties' : activeTab === 'programme' ? 'programmes' : 'courses')}
-                                                    className="h-12 w-12 bg-white/5 text-white/30 hover:text-danger hover:bg-danger/10 border border-white/5 hover:border-danger/40 rounded-2xl transition-all flex items-center justify-center group/opt"
-                                                >
-                                                    <Trash2 size={20} className="group-hover/opt:scale-110 transition-transform" />
-                                                </button>
+                                                {(activeTab !== 'university' || isAdmin) && (
+                                                    <>
+                                                        <button 
+                                                            onClick={() => {
+                                                                setEditingItem(item)
+                                                                setModalType(activeTab)
+                                                                setShowModal(true)
+                                                            }}
+                                                            className="h-12 w-12 bg-white/5 text-white/30 hover:text-primary hover:bg-primary/10 border border-white/5 hover:border-primary/40 rounded-2xl transition-all flex items-center justify-center group/opt"
+                                                        >
+                                                            <Pencil size={20} className="group-hover/opt:scale-110 transition-transform" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDelete(item.id, activeTab === 'university' ? 'universities' : activeTab === 'faculty' ? 'faculties' : activeTab === 'programme' ? 'programmes' : 'courses')}
+                                                            className="h-12 w-12 bg-white/5 text-white/30 hover:text-danger hover:bg-danger/10 border border-white/5 hover:border-danger/40 rounded-2xl transition-all flex items-center justify-center group/opt"
+                                                        >
+                                                            <Trash2 size={20} className="group-hover/opt:scale-110 transition-transform" />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                             <div className="group-hover:hidden text-white/10">
                                                 <MoreVertical size={22} />
