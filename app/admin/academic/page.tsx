@@ -63,6 +63,7 @@ export default function AcademicPage() {
     const [newProgramme, setNewProgramme] = useState({ name: '', faculty_id: '', duration_years: 4 })
     const [newCourse, setNewCourse] = useState({ title: '', code: '', programme_id: '', level: 100, semester: 1 })
     const [isAdmin, setIsAdmin] = useState(false)
+    const [userUniId, setUserUniId] = useState<string | null>(null)
     
     // Bulk Form State
     const [isBulkEntry, setIsBulkEntry] = useState(false)
@@ -77,8 +78,9 @@ export default function AcademicPage() {
         const checkRole = async () => {
             const { data: { user } } = await supabase.auth.getUser()
             if (user) {
-                const { data } = await supabase.from('profiles').select('isAdmin, role, is_rep').eq('id', user.id).single()
+                const { data } = await supabase.from('profiles').select('isAdmin, role, is_rep, university_id').eq('id', user.id).single()
                 setIsAdmin(data?.isAdmin || data?.role === 'admin')
+                setUserUniId(data?.university_id || null)
             }
         }
         checkRole()
@@ -94,20 +96,39 @@ export default function AcademicPage() {
     async function fetchAllData() {
         setLoading(true)
         try {
-            const { data: u } = await supabase.from('universities').select('*').order('name')
+            const { data: { user } } = await supabase.auth.getUser()
+            if (!user) return
+
+            const { data: profile } = await supabase.from('profiles').select('isAdmin, role, university_id').eq('id', user.id).single()
+            const isRoot = profile?.isAdmin || profile?.role === 'admin'
+            const uniId = profile?.university_id
+
+            // Fetch Unis
+            let uniQuery = supabase.from('universities').select('*').order('name')
+            if (!isRoot && uniId) uniQuery = uniQuery.eq('id', uniId)
+            const { data: u } = await uniQuery
             if (u) setUnis(u)
             
-            const { data: f } = await supabase.from('faculties').select('*, universities(name)').order('name')
+            // Fetch Faculties
+            let facQuery = supabase.from('faculties').select('*, universities(name)').order('name')
+            if (!isRoot && uniId) facQuery = facQuery.eq('university_id', uniId)
+            const { data: f } = await facQuery
             if (f) setFaculties(f.map(item => ({ ...item, university_name: (item.universities as any)?.name })))
             
-            const { data: p } = await supabase.from('programmes').select('*, faculties(*, universities(name))').order('name')
+            // Fetch Programmes
+            let progQuery = supabase.from('programmes').select('*, faculties!inner(*, universities(name))').order('name')
+            if (!isRoot && uniId) progQuery = progQuery.eq('faculties.university_id', uniId)
+            const { data: p } = await progQuery
             if (p) setProgrammes(p.map(item => ({ 
                 ...item, 
                 faculty_name: (item.faculties as any)?.name,
                 university_name: (item.faculties as any)?.universities?.name
             })))
 
-            const { data: c } = await supabase.from('courses').select('*, programmes(*, faculties(*, universities(name)))').order('title')
+            // Fetch Courses
+            let courseQuery = supabase.from('courses').select('*, programmes!inner(*, faculties!inner(*, universities(name)))').order('title')
+            if (!isRoot && uniId) courseQuery = courseQuery.eq('programmes.faculties.university_id', uniId)
+            const { data: c } = await courseQuery
             if (c) setCourses(c.map(item => ({ 
                 ...item, 
                 programme_name: (item.programmes as any)?.name,
@@ -325,6 +346,9 @@ export default function AcademicPage() {
                     <button
                         onClick={() => {
                             setModalType(activeTab)
+                            if (!isAdmin && activeTab === 'faculty' && userUniId) {
+                                setNewFaculty({ ...newFaculty, university_id: userUniId })
+                            }
                             setShowModal(true)
                         }}
                         className="relative px-10 py-5 rounded-[1.5rem] bg-primary text-card font-black text-xs uppercase tracking-[0.3em] overflow-hidden group/btn shadow-[0_0_30px_rgba(0,255,204,0.2)] hover:shadow-primary/40 transition-all duration-500 flex items-center gap-3"
