@@ -346,8 +346,20 @@ export default function AcademicPage() {
                     <button
                         onClick={() => {
                             setModalType(activeTab)
-                            if (!isAdmin && activeTab === 'faculty' && userUniId) {
-                                setNewFaculty({ ...newFaculty, university_id: userUniId })
+                            // Auto-select parent if only one exists for non-admins
+                            if (!isAdmin) {
+                                if (activeTab === 'faculty' && unis.length === 1) {
+                                    setNewFaculty({ ...newFaculty, university_id: unis[0].id })
+                                } else if (activeTab === 'programme' && faculties.length === 1) {
+                                    setNewProgramme({ ...newProgramme, faculty_id: faculties[0].id })
+                                } else if (activeTab === 'course' && programmes.length === 1) {
+                                    setNewCourse({ ...newCourse, programme_id: programmes[0].id })
+                                }
+
+                                // If userUniId is available but unis length logic above didn't catch it
+                                if (activeTab === 'faculty' && userUniId && !newFaculty.university_id) {
+                                    setNewFaculty({ ...newFaculty, university_id: userUniId })
+                                }
                             }
                             setShowModal(true)
                         }}
