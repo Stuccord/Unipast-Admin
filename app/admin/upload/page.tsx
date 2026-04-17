@@ -8,7 +8,6 @@ import { uploadPastQuestion } from './actions'
 import { UploadCloud, FileText, CheckCircle2, AlertCircle, ChevronRight, Info, Cpu, Zap, Activity } from 'lucide-react'
 
 export default function UploadPage() {
-    const [universities, setUniversities] = useState<any[]>([])
     const [faculties, setFaculties] = useState<any[]>([])
     const [programmes, setProgrammes] = useState<any[]>([])
     const [courses, setCourses] = useState<any[]>([])
@@ -30,8 +29,27 @@ export default function UploadPage() {
 
     const [totalPapers, setTotalPapers] = useState(0)
 
+    const [userProfile, setUserProfile] = useState<any>(null)
+    const [universities, setUniversities] = useState<any[]>([])
+    
     useEffect(() => {
+        // 1. Fetch User Profile to check for Rep status
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) {
+                supabase.from('profiles').select('*').eq('id', user.id).single()
+                    .then(({ data }) => {
+                        setUserProfile(data)
+                        if (data?.is_rep && data?.university_id) {
+                            setFormData(prev => ({ ...prev, university_id: data.university_id }))
+                        }
+                    })
+            }
+        })
+
+        // 2. Fetch Universities
         supabase.from('universities').select('id, name').order('name').then(({ data }) => setUniversities(data || []))
+        
+        // 3. Stats
         supabase.from('past_questions').select('*', { count: 'exact', head: true }).then(({ count }) => setTotalPapers(count || 0))
     }, [])
 
@@ -156,7 +174,8 @@ export default function UploadPage() {
                                     <label className="text-[10px] font-black text-white/30 uppercase tracking-[0.34em] px-2">Institution Node</label>
                                     <select
                                         required
-                                        className="w-full px-8 py-5 rounded-2xl bg-white/5 border border-white/5 outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/30 transition-all appearance-none cursor-pointer font-black text-[11px] text-white/60 tracking-widest uppercase hover:bg-white/10"
+                                        disabled={userProfile?.is_rep}
+                                        className="w-full px-8 py-5 rounded-2xl bg-white/5 border border-white/5 outline-none focus:ring-4 focus:ring-primary/5 focus:border-primary/30 transition-all appearance-none cursor-pointer font-black text-[11px] text-white/60 tracking-widest uppercase hover:bg-white/10 disabled:opacity-50"
                                         value={formData.university_id}
                                         onChange={e => setFormData({ ...formData, university_id: e.target.value })}
                                     >

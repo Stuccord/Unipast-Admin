@@ -1,6 +1,8 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -8,8 +10,44 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function uploadPastQuestion(formData: FormData) {
+    // 1. Verify User Session & Permissions
+    const cookieStore = cookies()
+    const supabase = createServerClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+        cookies: {
+            get(name: string) { return cookieStore.get(name)?.value },
+        },
+    })
+    
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { error: 'Unauthorized: No active session' }
+
+    const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', user.id).single()
+    if (!profile) return { error: 'Profile not found' }
+
     const file = formData.get('file') as File
     const course_id = formData.get('course_id') as string
+
+    // 2. Validate University Assignment (if the user is an agent)
+    if (profile.is_rep && !profile.is_admin) {
+        const { data: courseInfo } = await supabaseAdmin
+            .from('courses')
+            .select(`
+                programme_id,
+                programmes (
+                    faculty_id,
+                    faculties (
+                        university_id
+                    )
+                )
+            `)
+            .eq('id', course_id)
+            .single()
+
+        const courseUniversityId = (courseInfo as any)?.programmes?.faculties?.university_id
+        if (courseUniversityId !== profile.university_id) {
+            return { error: 'Security Violation: You are not authorized to inject data into this Institution Node.' }
+        }
+    }
     const year = parseInt(formData.get('year') as string)
     const semester = parseInt(formData.get('semester') as string)
     const level = parseInt(formData.get('level') as string)
@@ -36,11 +74,19 @@ export async function uploadPastQuestion(formData: FormData) {
 
     if (dbError) return { error: dbError.message }
 
-    // 3. Trigger a global notification
+    // 3. Fetch programme_id to trigger a targeted notification
+    const { data: courseData } = await supabaseAdmin
+        .from('courses')
+        .select('programme_id')
+        .eq('id', course_id)
+        .single()
+
     await supabaseAdmin.from('notifications').insert({
         title: 'New Past Question Available!',
         message: `${title || 'A new paper'} has been uploaded for your course.`,
-        type: 'info'
+        type: 'info',
+        course_id,
+        programme_id: courseData?.programme_id
     })
     return { success: true }
 }
